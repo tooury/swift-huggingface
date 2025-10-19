@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import Hub
+@testable import HuggingFace
 
 @Suite("Git Tests")
 struct GitTests {

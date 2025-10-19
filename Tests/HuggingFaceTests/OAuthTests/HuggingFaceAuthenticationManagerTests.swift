@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import OAuth
+@testable import HuggingFace
 
 #if swift(>=6.1)
     @Suite("HuggingFace Authentication Manager Tests")

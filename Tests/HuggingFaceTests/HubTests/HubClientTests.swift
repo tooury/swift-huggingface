@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import Hub
+@testable import HuggingFace
 
 @Suite("Hub Client Tests")
 struct HubClientTests {

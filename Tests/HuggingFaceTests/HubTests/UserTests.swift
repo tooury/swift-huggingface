@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import Hub
+@testable import HuggingFace
 
 #if swift(>=6.1)
     @Suite("User Tests", .serialized)

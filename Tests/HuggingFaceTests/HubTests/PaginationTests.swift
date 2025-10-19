@@ -5,7 +5,7 @@ import Testing
     import FoundationNetworking
 #endif
 
-@testable import Hub
+@testable import HuggingFace
 
 @Suite("Pagination Tests")
 struct PaginationTests {

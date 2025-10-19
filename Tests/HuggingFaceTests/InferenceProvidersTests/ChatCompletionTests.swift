@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import InferenceProviders
+@testable import HuggingFace
 
 #if swift(>=6.1)
 

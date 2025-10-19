@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import Hub
+@testable import HuggingFace
 
 // MARK: - Request Handler Storage
 

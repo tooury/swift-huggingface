@@ -24,33 +24,15 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "Hub",
-            path: "Sources/Hub"
-        ),
-        .target(
-            name: "InferenceProviders",
+            name: "HuggingFace",
             dependencies: [
                 .product(name: "EventSource", package: "EventSource")
             ],
-            path: "Sources/InferenceProviders"
-        ),
-        .target(
-            name: "OAuth",
-            path: "Sources/OAuth",
-            exclude: ["README.md"]
-        ),
-        .target(
-            name: "HuggingFace",
-            dependencies: [
-                .target(name: "Hub"),
-                .target(name: "InferenceProviders"),
-                .target(name: "OAuth"),
-            ],
-            path: "Sources/HuggingFace"
+            path: "Sources/HuggingFace",
         ),
         .testTarget(
             name: "HuggingFaceTests",
-            dependencies: ["HuggingFace", "Hub"]
+            dependencies: ["HuggingFace"]
         ),
     ]
 )
