@@ -78,29 +78,29 @@
         public func signIn() async throws {
             let code = try await oauthClient.authenticate { @Sendable url, scheme in
                 return try await withCheckedThrowingContinuation { continuation in
-                    Task { @MainActor in
-                        let authSession = ASWebAuthenticationSession(
-                            url: url,
-                            callbackURLScheme: scheme
-                        ) { callbackURL, error in
-                            if let error = error {
-                                continuation.resume(throwing: error)
-                                return
-                            }
-
-                            guard let url = callbackURL else {
-                                continuation.resume(throwing: OAuthError.invalidCallback)
-                                return
-                            }
-
-                            guard let code = url.oauthCode else {
-                                continuation.resume(throwing: OAuthError.invalidCallback)
-                                return
-                            }
-
-                            continuation.resume(returning: code)
+                    let authSession = ASWebAuthenticationSession(
+                        url: url,
+                        callbackURLScheme: scheme
+                    ) { callbackURL, error in
+                        if let error = error {
+                            continuation.resume(throwing: error)
+                            return
                         }
 
+                        guard let url = callbackURL else {
+                            continuation.resume(throwing: OAuthError.invalidCallback)
+                            return
+                        }
+
+                        guard let code = url.oauthCode else {
+                            continuation.resume(throwing: OAuthError.invalidCallback)
+                            return
+                        }
+
+                        continuation.resume(returning: code)
+                    }
+
+                    Task { @MainActor in
                         authSession.prefersEphemeralWebBrowserSession = false
                         authSession.presentationContextProvider =
                             HuggingFaceAuthenticationPresentationContextProvider.shared
