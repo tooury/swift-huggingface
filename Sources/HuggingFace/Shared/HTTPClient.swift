@@ -12,6 +12,7 @@ enum HTTPMethod: String, Hashable, Sendable {
     case put = "PUT"
     case delete = "DELETE"
     case patch = "PATCH"
+    case head = "HEAD"
 }
 
 /// Base HTTP client with common functionality for all Hugging Face API clients.
@@ -182,9 +183,7 @@ final class HTTPClient: @unchecked Sendable {
         return data
     }
 
-    // MARK: - Private Methods
-
-    private func createRequest(
+    func createRequest(
         _ method: HTTPMethod,
         _ path: String,
         params: [String: Value]? = nil,
@@ -195,7 +194,7 @@ final class HTTPClient: @unchecked Sendable {
 
         var httpBody: Data? = nil
         switch method {
-        case .get:
+        case .get, .head:
             if let params {
                 var queryItems: [URLQueryItem] = []
                 for (key, value) in params {
@@ -250,7 +249,7 @@ final class HTTPClient: @unchecked Sendable {
         return request
     }
 
-    private func validateResponse(_ response: URLResponse, data: Data? = nil) throws -> HTTPURLResponse {
+    func validateResponse(_ response: URLResponse, data: Data? = nil) throws -> HTTPURLResponse {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw HTTPClientError.unexpectedError("Invalid response from server: \(response)")
         }

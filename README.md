@@ -378,6 +378,119 @@ _ = try await client.updateDiscussionStatus(
 )
 ```
 
+#### File Operations
+
+```swift
+// List files in a repository
+let files = try await client.listFiles(
+    in: "facebook/bart-large",
+    kind: .model,
+    revision: "main",
+    recursive: true
+)
+
+for file in files {
+    if file.type == .file {
+        print("\(file.path) - \(file.size ?? 0) bytes")
+    }
+}
+
+// Check if a file exists
+let exists = await client.fileExists(
+    at: "README.md",
+    in: "facebook/bart-large"
+)
+
+// Get file information
+let info = try await client.fileInfo(
+    "pytorch_model.bin",
+    in: "facebook/bart-large"
+)
+print("File size: \(info.size ?? 0)")
+print("Is LFS: \(info.isLFS)")
+
+// Download file data
+let data = try await client.downloadFileContents(
+    at: "config.json",
+    from: "openai-community/gpt2"
+)
+let config = try JSONDecoder().decode(ModelConfig.self, from: data)
+
+// Download file to disk
+let destination = FileManager.default.temporaryDirectory
+    .appendingPathComponent("model.safetensors")
+
+let fileURL = try await client.downloadFile(
+    at: "model.safetensors",
+    from: "openai-community/gpt2",
+    to: destination
+)
+
+// Download with progress tracking
+let progress = Progress(totalUnitCount: 0)
+Task {
+    for await _ in progress.values(forKeyPath: \.fractionCompleted) {
+        print("Download progress: \(progress.fractionCompleted * 100)%")
+    }
+}
+
+let fileURL = try await client.downloadFile(
+    at: "pytorch_model.bin",
+    from: "facebook/bart-large",
+    to: destination,
+    progress: progress
+)
+
+// Resume a download
+let resumeData: Data = // ... from previous download
+let fileURL = try await client.resumeDownloadFile(
+    resumeData: resumeData,
+    to: destination,
+    progress: progress
+)
+
+// Upload a file
+let result = try await client.uploadFile(
+    "/path/to/local/file.csv"),
+    to: "data/new_dataset.csv",
+    in: "username/my-dataset",
+    kind: .dataset,
+    branch: "main",
+    message: "Add new dataset"
+)
+print("Uploaded to: \(result.path)")
+
+// Upload multiple files in a batch
+let results = try await client.uploadFiles(
+    [
+        "README.md": .path("/path/to/readme.md"),
+        "data.json": .path("/path/to/data.json"),
+    ],
+    to: "username/my-repo",
+    message: "Initial commit",
+    maxConcurrent: 3
+)
+
+// Or build a batch programmatically
+var batch = FileBatch()
+batch["config.json"] = .path("/path/to/config.json")
+batch["model.safetensors"] = .url(modelURL, mimeType: "application/octet-stream")
+
+// Delete a file
+try await client.deleteFile(
+    at: "old_file.txt",
+    from: "username/my-repo",
+    message: "Remove old file"
+)
+
+// Delete multiple files
+try await client.deleteFiles(
+    at: ["file1.txt", "file2.txt", "old_dir/file3.txt"],
+    from: "username/my-repo",
+    message: "Cleanup old files"
+)
+```
+
 #### User Access Management
 
 ```swift
