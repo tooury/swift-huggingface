@@ -402,12 +402,12 @@ let exists = await client.fileExists(
 )
 
 // Get file information
-let info = try await client.getFile(
-    "pytorch_model.bin",
+let file = try await client.getFile(
+    at: "pytorch_model.bin",
     in: "facebook/bart-large"
 )
-print("File size: \(info.size ?? 0)")
-print("Is LFS: \(info.isLFS)")
+print("File size: \(file.size ?? 0)")
+print("Is LFS: \(file.isLFS)")
 
 // Download file data
 let data = try await client.downloadFileContents(
