@@ -254,7 +254,7 @@ import Testing
 
             let client = createMockClient()
             let repoID: Repo.ID = "user/model"
-            let data = try await client.downloadFileContents(at: "test.txt", from: repoID)
+            let data = try await client.downloadContentsOfFile(at: "test.txt", from: repoID)
 
             #expect(data == expectedData)
         }
@@ -276,7 +276,7 @@ import Testing
 
             let client = createMockClient()
             let repoID: Repo.ID = "user/model"
-            _ = try await client.downloadFileContents(at: "test.txt", from: repoID, useRaw: true)
+            _ = try await client.downloadContentsOfFile(at: "test.txt", from: repoID, useRaw: true)
         }
 
         // MARK: - Delete Tests
@@ -377,7 +377,7 @@ import Testing
             let repoID: Repo.ID = "user/model"
 
             await #expect(throws: Error.self) {
-                _ = try await client.downloadFileContents(at: "test.txt", from: repoID)
+                _ = try await client.downloadContentsOfFile(at: "test.txt", from: repoID)
             }
         }
 
@@ -398,7 +398,7 @@ import Testing
             let repoID: Repo.ID = "user/private-model"
 
             await #expect(throws: HTTPClientError.self) {
-                _ = try await client.downloadFileContents(at: "test.txt", from: repoID)
+                _ = try await client.downloadContentsOfFile(at: "test.txt", from: repoID)
             }
         }
     }

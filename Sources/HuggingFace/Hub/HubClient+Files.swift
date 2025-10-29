@@ -174,7 +174,7 @@ public extension HubClient {
     ///   - useRaw: Use raw endpoint instead of resolve
     ///   - cachePolicy: Cache policy for the request
     /// - Returns: File data
-    func downloadFileContents(
+    func downloadContentsOfFile(
         at repoPath: String,
         from repo: Repo.ID,
         kind: Repo.Kind = .model,
@@ -266,7 +266,7 @@ public extension HubClient {
     ///   - useRaw: Use raw endpoint
     ///   - cachePolicy: Cache policy for the request
     /// - Returns: Final destination URL
-    func downloadFileContents(
+    func downloadContentsOfFile(
         at repoPath: String,
         from repo: Repo.ID,
         to destination: URL,

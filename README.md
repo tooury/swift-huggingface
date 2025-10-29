@@ -410,7 +410,7 @@ print("File size: \(file.size ?? 0)")
 print("Is LFS: \(file.isLFS)")
 
 // Download file data
-let data = try await client.downloadFileContents(
+let data = try await client.downloadContentsOfFile(
     at: "config.json",
     from: "openai-community/gpt2"
 )
