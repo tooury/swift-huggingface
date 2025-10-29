@@ -104,7 +104,7 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
 
         private init() {}
 
-        func withLock<T>(_ operation: @Sendable () async throws -> T) async rethrows -> T {
+        func withLock<T: Sendable>(_ operation: @Sendable () async throws -> T) async rethrows -> T {
             // Wait for lock to be available
             while isLocked {
                 try? await Task.sleep(for: .milliseconds(10))
