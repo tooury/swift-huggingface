@@ -1,11 +1,20 @@
 import Foundation
 
-/// Information about a file in a repository
+/// Information about a file in a repository.
 public struct File: Hashable, Codable, Sendable {
+    /// A Boolean value indicating whether the file exists in the repository.
     public let exists: Bool
+
+    /// The size of the file in bytes.
     public let size: Int64?
+
+    /// The entity tag (ETag) for the file, used for caching and change detection.
     public let etag: String?
+
+    /// The Git revision (commit SHA) at which this file information was retrieved.
     public let revision: String?
+
+    /// A Boolean value indicating whether the file is stored using Git Large File Storage (LFS).
     public let isLFS: Bool
 
     init(
@@ -23,9 +32,30 @@ public struct File: Hashable, Codable, Sendable {
     }
 }
 
+// MARK: -
+
+/// A collection of files to upload in a batch operation.
+///
+/// Use `FileBatch` to prepare multiple files for uploading to a repository in a single operation.
+/// You can add files using subscript notation or dictionary literal syntax.
+///
+/// ```swift
+/// var batch = FileBatch()
+/// batch["config.json"] = .path("/path/to/config.json")
+/// batch["model.safetensors"] = .url(
+///     URL(fileURLWithPath: "/path/to/model.safetensors"),
+///     mimeType: "application/octet-stream"
+/// )
+/// let _ = try await client.uploadFiles(batch, to: "username/my-repo", message: "Initial commit")
+/// ```
+/// - SeeAlso: `HubClient.uploadFiles(_:to:kind:branch:message:maxConcurrent:)`
 public struct FileBatch: Hashable, Codable, Sendable {
+    /// An entry representing a file to upload.
     public struct Entry: Hashable, Codable, Sendable {
+        /// The file URL pointing to the local file to upload.
         public var url: URL
+
+        /// The MIME type of the file.
         public var mimeType: String?
 
         private init(url: URL, mimeType: String? = nil) {
@@ -33,6 +63,11 @@ public struct FileBatch: Hashable, Codable, Sendable {
             self.mimeType = mimeType
         }
 
+        /// Creates a file entry from a file system path.
+        /// - Parameters:
+        ///   - path: The file system path to the local file.
+        ///   - mimeType: The MIME type of the file. If not provided, the MIME type is inferred from the file extension.
+        /// - Returns: A file entry for the specified path.
         public static func path(_ path: String, mimeType: String? = nil) -> Self {
             return Self(url: URL(fileURLWithPath: path), mimeType: mimeType)
         }
@@ -54,14 +89,20 @@ public struct FileBatch: Hashable, Codable, Sendable {
 
     private var entries: [String: Entry]
 
+    /// Creates an empty file batch.
     public init() {
         self.entries = [:]
     }
 
+    /// Creates a file batch with the specified entries.
+    /// - Parameter entries: A dictionary mapping repository paths to file entries.
     public init(_ entries: [String: Entry]) {
         self.entries = entries
     }
 
+    /// Accesses the file entry for the specified repository path.
+    /// - Parameter path: The path in the repository where the file will be uploaded.
+    /// - Returns: The file entry for the specified path, or `nil` if no entry exists.
     public subscript(path: String) -> Entry? {
         get {
             return entries[path]
@@ -72,11 +113,7 @@ public struct FileBatch: Hashable, Codable, Sendable {
     }
 }
 
-extension FileBatch: ExpressibleByDictionaryLiteral {
-    public init(dictionaryLiteral elements: (String, Entry)...) {
-        self.init(Dictionary(uniqueKeysWithValues: elements))
-    }
-}
+// MARK: - Collection
 
 extension FileBatch: Swift.Collection {
     public typealias Index = Dictionary<String, Entry>.Index
@@ -88,5 +125,13 @@ extension FileBatch: Swift.Collection {
 
     public func makeIterator() -> Dictionary<String, Entry>.Iterator {
         return entries.makeIterator()
+    }
+}
+
+// MARK: - ExpressibleByDictionaryLiteral
+
+extension FileBatch: ExpressibleByDictionaryLiteral {
+    public init(dictionaryLiteral elements: (String, Entry)...) {
+        self.init(Dictionary(uniqueKeysWithValues: elements))
     }
 }
