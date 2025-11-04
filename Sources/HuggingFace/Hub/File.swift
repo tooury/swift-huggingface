@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Information about a file in a repository.
@@ -29,6 +30,31 @@ public struct File: Hashable, Codable, Sendable {
         self.etag = etag
         self.revision = revision
         self.isLFS = isLFS
+    }
+}
+
+// MARK: - File Metadata
+
+/// Metadata about a downloaded file stored locally.
+public struct LocalDownloadFileMetadata: Hashable, Codable, Sendable {
+    /// Commit hash of the file in the repository.
+    public let commitHash: String
+
+    /// ETag of the file in the repository. Used to check if the file has changed.
+    /// For LFS files, this is the sha256 of the file. For regular files, it corresponds to the git hash.
+    public let etag: String
+
+    /// Path of the file in the repository.
+    public let filename: String
+
+    /// The timestamp of when the metadata was saved (i.e., when the metadata was accurate).
+    public let timestamp: Date
+
+    public init(commitHash: String, etag: String, filename: String, timestamp: Date) {
+        self.commitHash = commitHash
+        self.etag = etag
+        self.filename = filename
+        self.timestamp = timestamp
     }
 }
 
@@ -91,7 +117,7 @@ public struct FileBatch: Hashable, Codable, Sendable {
 
     /// Creates an empty file batch.
     public init() {
-        self.entries = [:]
+        entries = [:]
     }
 
     /// Creates a file batch with the specified entries.
