@@ -45,10 +45,10 @@ struct HubClientTests {
 
         try #require(HubClient.isXetSupported, "Xet is not supported on this platform")
 
-        let disabledClient = HubClient(host: host, enableXet: false)
+        let disabledClient = HubClient(host: host, xetConfiguration: nil)
         #expect(disabledClient.isXetEnabled == false)
 
-        let enabledClient = HubClient(host: host, enableXet: true)
+        let enabledClient = HubClient(host: host, xetConfiguration: .highPerformance())
         #expect(enabledClient.isXetEnabled)
     }
 }

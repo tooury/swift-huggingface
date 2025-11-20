@@ -44,10 +44,7 @@ public final class HubClient: Sendable {
     
     #if canImport(Xet)
         /// Xet client instance for connection reuse (created once during initialization)
-        private let xetClient: XetClient?
-        
-        /// Thread-safe JWT cache for CAS access tokens
-        private let jwtCache: JwtCache
+        private let xetClient: XetHubClient?
     #endif
 
     /// The host URL for requests made by the client.
@@ -80,17 +77,19 @@ public final class HubClient: Sendable {
     /// - Parameters:
     ///   - session: The underlying client session. Defaults to `URLSession(configuration: .default)`.
     ///   - userAgent: The value for the `User-Agent` header sent in requests, if any. Defaults to `nil`.
+    ///   - xetConfiguration: Configuration for Xet downloads. Pass `nil` to disable Xet acceleration.
+    ///     Defaults to `.highPerformance()` if Xet is supported, `nil` otherwise.
     public convenience init(
         session: URLSession = URLSession(configuration: .default),
         userAgent: String? = nil,
-        enableXet: Bool = HubClient.isXetSupported
+        xetConfiguration: XetConfiguration? = HubClient.isXetSupported ? .highPerformance() : nil
     ) {
         self.init(
             session: session,
             host: Self.detectHost(),
             userAgent: userAgent,
             tokenProvider: .environment,
-            enableXet: enableXet
+            xetConfiguration: xetConfiguration
         )
     }
 
@@ -101,19 +100,21 @@ public final class HubClient: Sendable {
     ///   - host: The host URL to use for requests.
     ///   - userAgent: The value for the `User-Agent` header sent in requests, if any. Defaults to `nil`.
     ///   - bearerToken: The Bearer token for authentication, if any. Defaults to `nil`.
+    ///   - xetConfiguration: Configuration for Xet downloads. Pass `nil` to disable Xet acceleration.
+    ///     Defaults to `.highPerformance()` if Xet is supported, `nil` otherwise.
     public convenience init(
         session: URLSession = URLSession(configuration: .default),
         host: URL,
         userAgent: String? = nil,
         bearerToken: String? = nil,
-        enableXet: Bool = HubClient.isXetSupported
+        xetConfiguration: XetConfiguration? = HubClient.isXetSupported ? .highPerformance() : nil
     ) {
         self.init(
             session: session,
             host: host,
             userAgent: userAgent,
             tokenProvider: bearerToken.map { .fixed(token: $0) } ?? .none,
-            enableXet: enableXet
+            xetConfiguration: xetConfiguration
         )
     }
 
@@ -124,14 +125,16 @@ public final class HubClient: Sendable {
     ///   - host: The host URL to use for requests.
     ///   - userAgent: The value for the `User-Agent` header sent in requests, if any. Defaults to `nil`.
     ///   - tokenProvider: The token provider for authentication.
+    ///   - xetConfiguration: Configuration for Xet downloads. Pass `nil` to disable Xet acceleration.
+    ///     Defaults to `.highPerformance()` if Xet is supported, `nil` otherwise.
     public init(
         session: URLSession = URLSession(configuration: .default),
         host: URL,
         userAgent: String? = nil,
         tokenProvider: TokenProvider,
-        enableXet: Bool = HubClient.isXetSupported
+        xetConfiguration: XetConfiguration? = HubClient.isXetSupported ? .highPerformance() : nil
     ) {
-        self.isXetEnabled = enableXet && HubClient.isXetSupported
+        self.isXetEnabled = xetConfiguration != nil && HubClient.isXetSupported
         self.httpClient = HTTPClient(
             host: host,
             userAgent: userAgent,
@@ -140,12 +143,12 @@ public final class HubClient: Sendable {
         )
         
         #if canImport(Xet)
-            self.jwtCache = JwtCache()
-            
-            if self.isXetEnabled {
-                // Create XetClient once during initialization
-                let token = try? tokenProvider.getToken()
-                self.xetClient = try? (token.map { try XetClient.withToken(token: $0) } ?? XetClient())
+            if let config = xetConfiguration, self.isXetEnabled {
+                // Create XetHubClient once during initialization
+                self.xetClient = XetHubClient(
+                    sessionConfiguration: session.configuration,
+                    configuration: config
+                )
             } else {
                 self.xetClient = nil
             }
@@ -179,92 +182,33 @@ public final class HubClient: Sendable {
     // MARK: - Xet Client
 
     #if canImport(Xet)
-        /// Thread-safe cache for CAS JWT tokens
-        private final class JwtCache: @unchecked Sendable {
-            private struct CacheKey: Hashable {
-                let repo: String
-                let revision: String
-            }
-            
-            private struct CachedJwt {
-                let jwt: CasJwtInfo
-                let expiresAt: Date
-                
-                var isExpired: Bool {
-                    Date() >= expiresAt
-                }
-            }
-            
-            private var cache: [CacheKey: CachedJwt] = [:]
-            private let lock = NSLock()
-            
-            func get(repo: String, revision: String) -> CasJwtInfo? {
-                lock.lock()
-                defer { lock.unlock() }
-                
-                let key = CacheKey(repo: repo, revision: revision)
-                if let cached = cache[key], !cached.isExpired {
-                    return cached.jwt
-                }
-                return nil
-            }
-            
-            func set(jwt: CasJwtInfo, repo: String, revision: String) {
-                lock.lock()
-                defer { lock.unlock() }
-                
-                let key = CacheKey(repo: repo, revision: revision)
-                // Cache with expiration (5 minutes before actual expiry for safety)
-                let expiresAt = Date(timeIntervalSince1970: TimeInterval(jwt.exp())) - 300
-                cache[key] = CachedJwt(jwt: jwt, expiresAt: expiresAt)
-            }
-        }
-    
         /// Returns the Xet client for faster downloads.
         ///
         /// The client is created once during initialization and reused across downloads
         /// to enable connection pooling and avoid reinitialization overhead.
         ///
         /// - Returns: A Xet client instance.
-        internal func getXetClient() throws -> XetClient {
+        internal func getXetClient() throws -> XetHubClient {
             guard isXetEnabled, let client = xetClient else {
                 throw HTTPClientError.requestError("Xet support is disabled for this client.")
             }
             return client
         }
         
-        /// Gets or fetches a CAS JWT for the given repository and revision.
+        /// Gets or fetches a CAS JWT for the given refresh route.
         ///
-        /// JWTs are cached to avoid redundant API calls.
+        /// JWTs are cached by the XetHubClient to avoid redundant API calls.
         ///
         /// - Parameters:
-        ///   - xetClient: The Xet client to use for fetching the JWT
-        ///   - repo: Repository identifier
-        ///   - revision: Git revision
-        ///   - isUpload: Whether this JWT is for upload (true) or download (false)
+        ///   - refreshRoute: The refresh route URL for fetching the JWT
+        ///   - token: Optional authentication token
         /// - Returns: A CAS JWT info object
         internal func getCachedJwt(
-            xetClient: XetClient,
-            repo: String,
-            revision: String,
-            isUpload: Bool
-        ) throws -> CasJwtInfo {
-            // Check cache first
-            if let cached = jwtCache.get(repo: repo, revision: revision) {
-                return cached
-            }
-            
-            // Fetch a new JWT
-            let jwt = try xetClient.getCasJwt(
-                repo: repo,
-                revision: revision,
-                isUpload: isUpload
-            )
-            
-            // Cache it
-            jwtCache.set(jwt: jwt, repo: repo, revision: revision)
-            
-            return jwt
+            refreshRoute: String,
+            token: String?
+        ) async throws -> CasJwtInfo {
+            let xetClient = try getXetClient()
+            return try await xetClient.getCasJwt(refreshRoute: refreshRoute, token: token)
         }
     #endif
     }

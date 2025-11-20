@@ -2,6 +2,10 @@ import ArgumentParser
 import Foundation
 import HuggingFace
 
+#if canImport(Xet)
+    import Xet
+#endif
+
 @main
 struct DownloadSpeedTest: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -28,12 +32,39 @@ struct DownloadSpeedTest: AsyncParsableCommand {
     )
     var xet: Bool = HubClient.isXetSupported
 
+    @Option(
+        name: .long,
+        help: "Maximum concurrent range GET requests for Xet downloads. Default: 256 (high performance)."
+    )
+    var maxConcurrentRangeGets: Int?
+
+    @Flag(
+        name: .long,
+        inversion: .prefixedNo,
+        help: "Use high performance mode (256 concurrent requests). Use --no-high-performance for standard mode (48 concurrent requests)."
+    )
+    var highPerformance: Bool = true
+
     func run() async throws {
         guard let repoID = Repo.ID(rawValue: repo) else {
             throw ValidationError("Invalid repository identifier: \(repo). Expected format is owner/name.")
         }
 
-        let client = HubClient(enableXet: xet)
+        let xetConfiguration: XetConfiguration?
+        if xet {
+            if let maxConcurrent = maxConcurrentRangeGets {
+                xetConfiguration = XetConfiguration(
+                    maxConcurrentRangeGets: maxConcurrent,
+                    highPerformanceMode: highPerformance
+                )
+            } else {
+                xetConfiguration = highPerformance ? .highPerformance() : .default()
+            }
+        } else {
+            xetConfiguration = nil
+        }
+
+        let client = HubClient(xetConfiguration: xetConfiguration)
 
         print("🚀 Hugging Face Download Speed Test")
         print("Repository: \(repoID)")
@@ -42,19 +73,11 @@ struct DownloadSpeedTest: AsyncParsableCommand {
 
         if client.isXetEnabled {
             print("✅ Xet support: ENABLED")
-
-            // Show Xet configuration (optimized defaults)
-            if let concurrency = ProcessInfo.processInfo.environment["XET_NUM_CONCURRENT_RANGE_GETS"] {
-                print("   Concurrent range GETs: \(concurrency)")
-            } else {
-                print("   Concurrent range GETs: 256 (optimized default)")
+            
+            if let config = xetConfiguration {
+                print("   Concurrent range GETs: \(config.maxConcurrentRangeGets)")
+                print("   High performance mode: \(config.highPerformanceMode ? "ON" : "OFF")")
             }
-
-            let highPerfDisabled = ProcessInfo.processInfo.environment["XET_HIGH_PERFORMANCE"] == "0"
-            print("   High performance mode: \(highPerfDisabled ? "OFF (disabled)" : "ON (default)")")
-
-            print()
-            print("   💡 To adjust settings, set XET_NUM_CONCURRENT_RANGE_GETS or XET_HIGH_PERFORMANCE=0")
         } else {
             print("❌ Xet support: DISABLED (using LFS)")
         }
