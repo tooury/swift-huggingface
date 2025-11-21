@@ -21,14 +21,14 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/mattt/EventSource.git", from: "1.0.0"),
-        .package(path: "../swift-xet-ported"),
+        .package(name: "Xet", path: "../swift-xet-ported"),
     ],
     targets: [
         .target(
             name: "HuggingFace",
             dependencies: [
                 .product(name: "EventSource", package: "EventSource"),
-                .product(name: "Xet", package: "swift-xet-ported"),
+                .product(name: "Xet", package: "Xet"),
             ],
             path: "Sources/HuggingFace"
         ),

@@ -6,9 +6,7 @@ import UniformTypeIdentifiers
     import FoundationNetworking
 #endif
 
-#if canImport(Xet)
-    import Xet
-#endif
+import Xet
 
 // MARK: - Upload Operations
 
@@ -244,23 +242,26 @@ public extension HubClient {
         cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy,
         progress: Progress? = nil
     ) async throws -> URL {
-        #if canImport(Xet)
-            if isXetEnabled {
-                do {
-                    if let downloaded = try await downloadFileWithXet(
-                        repoPath: repoPath,
-                        repo: repo,
-                        revision: revision,
-                        destination: destination,
-                        progress: progress
-                    ) {
-                        return downloaded
-                    }
-                } catch {
-                    // Silently fall back to LFS
+        print("downloadFile() started")
+        print("downloadFile() isXetEnabled: \(isXetEnabled)")
+        if isXetEnabled {
+            print("downloadFile() Xet enabled, trying Xet download")
+            do {
+                if let downloaded = try await downloadFileWithXet(
+                    repoPath: repoPath,
+                    repo: repo,
+                    revision: revision,
+                    destination: destination,
+                    progress: progress
+                ) {
+                    return downloaded
                 }
+            } catch {
+                // Silently fall back to LFS
             }
-        #endif
+        } else {
+            print("downloadFile() Xet disabled, falling back to LFS")
+        }
 
         // Fallback to existing LFS download method
         let endpoint = useRaw ? "raw" : "resolve"
@@ -590,103 +591,103 @@ public extension HubClient {
     }
 }
 
-#if canImport(Xet)
-    private extension HubClient {
-        /// Downloads a file using Xet's content-addressable storage system.
-        ///
-        /// This method uses a cached XetHubClient instance and JWT tokens to maximize
-        /// download performance through connection reuse and reduced API overhead.
-        ///
-        /// Performance optimizations:
-        /// - Reuses a single XetHubClient across all downloads for HTTP/TLS connection pooling
-        /// - Caches CAS JWT tokens per refresh route to avoid redundant API calls
-        /// - Leverages Xet's parallel chunk downloading
-        @discardableResult
-        func downloadFileWithXet(
-            repoPath: String,
-            repo: Repo.ID,
-            revision: String,
-            destination: URL,
-            progress: Progress?
-        ) async throws -> URL? {
-            guard isXetEnabled else {
-                return nil
-            }
+extension HubClient {
+    /// Downloads a file using Xet's content-addressable storage system.
+    ///
+    /// This method uses a cached XetHubClient instance and JWT tokens to maximize
+    /// download performance through connection reuse and reduced API overhead.
+    ///
+    /// Performance optimizations:
+    /// - Reuses a single XetHubClient across all downloads for HTTP/TLS connection pooling
+    /// - Caches CAS JWT tokens per refresh route to avoid redundant API calls
+    /// - Leverages Xet's parallel chunk downloading
+    @discardableResult
+    func downloadFileWithXet(
+        repoPath: String,
+        repo: Repo.ID,
+        revision: String,
+        destination: URL,
+        progress: Progress?
+    ) async throws -> URL? {
+        guard isXetEnabled else {
+            return nil
+        }
 
-            let xetClient = try getXetClient()
-            let token = try? await httpClient.tokenProvider.getToken()
+        let xetClient = try getXetClient()
+        let token = try? await httpClient.tokenProvider.getToken()
 
-            // Get file metadata (includes hash and refresh route)
-            guard
-                let metadata = try await xetClient.getFileMetadata(
-                    repo: repo.rawValue,
-                    path: repoPath,
-                    revision: revision,
-                    host: host,
-                    token: token
-                )
-            else {
-                return nil
-            }
-
-            // Get or fetch CAS JWT using refresh route
-            let jwt = try await getCachedJwt(
-                refreshRoute: metadata.refreshRoute,
+        // Get file metadata (includes hash and refresh route)
+        guard
+            let metadata = try await xetClient.getFileMetadata(
+                repo: repo.rawValue,
+                path: repoPath,
+                revision: revision,
+                host: host,
                 token: token
             )
-
-            // Create file info from metadata
-            let fileInfo = XetFileInfo(
-                hash: metadata.fileHash,
-                fileSize: metadata.size
-            )
-
-            // Ensure destination directory exists
-            let destinationDirectory = destination.deletingLastPathComponent()
-            try FileManager.default.createDirectory(
-                at: destinationDirectory,
-                withIntermediateDirectories: true
-            )
-
-            // Download from CAS
-            actor BytesTracker {
-                var totalBytesWritten: Int64 = 0
-                let progressObject: Progress?
-
-                init(progressObject: Progress?) {
-                    self.progressObject = progressObject
-                }
-
-                func addBytes(_ bytes: Int64) {
-                    totalBytesWritten += bytes
-                    if let progressObject {
-                        progressObject.completedUnitCount = totalBytesWritten
-                    }
-                }
-            }
-
-            let progressObject = progress
-            if let progressObject {
-                progressObject.totalUnitCount = Int64(metadata.size)
-            }
-
-            let tracker = BytesTracker(progressObject: progressObject)
-
-            _ = try await xetClient.downloadFromCas(
-                fileInfo: fileInfo,
-                jwt: jwt,
-                destination: destination,
-                progress: { bytesJustWritten in
-                    Task {
-                        await tracker.addBytes(Int64(bytesJustWritten))
-                    }
-                }
-            )
-
-            return destination
+        else {
+            return nil
         }
+
+        // Get or fetch CAS JWT using refresh route
+        let jwt = try await getCachedJwt(
+            refreshRoute: metadata.refreshRoute,
+            token: token
+        )
+
+        // Create file info from metadata
+        let fileInfo = XetFileInfo(
+            hash: metadata.fileHash,
+            fileSize: metadata.size
+        )
+
+        // Ensure destination directory exists
+        let destinationDirectory = destination.deletingLastPathComponent()
+        try FileManager.default.createDirectory(
+            at: destinationDirectory,
+            withIntermediateDirectories: true
+        )
+
+        // Download from CAS
+        actor BytesTracker {
+            var totalBytesWritten: Int64 = 0
+            let progressObject: Progress?
+
+            init(progressObject: Progress?) {
+                self.progressObject = progressObject
+            }
+
+            func addBytes(_ bytes: Int64) {
+                totalBytesWritten += bytes
+                if let progressObject {
+                    progressObject.completedUnitCount = totalBytesWritten
+                }
+            }
+        }
+
+        let progressObject = progress
+        if let progressObject {
+            progressObject.totalUnitCount = Int64(metadata.size)
+        }
+
+        let tracker = BytesTracker(progressObject: progressObject)
+
+        print("[HubClient+Files] Starting Xet download for \(repo.rawValue)/\(repoPath)")
+        _ = try await xetClient.downloadFromCas(
+            fileInfo: fileInfo,
+            jwt: jwt,
+            destination: destination,
+            progress: { bytesJustWritten in
+                Task {
+                    await tracker.addBytes(Int64(bytesJustWritten))
+                }
+            }
+        )
+        print("[HubClient+Files] Finished Xet download for \(repo.rawValue)/\(repoPath)")
+
+        return destination
     }
-#endif
+}
 
 // MARK: - Metadata Helpers
 
