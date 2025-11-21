@@ -242,10 +242,7 @@ public extension HubClient {
         cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy,
         progress: Progress? = nil
     ) async throws -> URL {
-        print("downloadFile() started")
-        print("downloadFile() isXetEnabled: \(isXetEnabled)")
         if isXetEnabled {
-            print("downloadFile() Xet enabled, trying Xet download")
             do {
                 if let downloaded = try await downloadFileWithXet(
                     repoPath: repoPath,
@@ -259,8 +256,6 @@ public extension HubClient {
             } catch {
                 // Silently fall back to LFS
             }
-        } else {
-            print("downloadFile() Xet disabled, falling back to LFS")
         }
 
         // Fallback to existing LFS download method
@@ -614,7 +609,7 @@ extension HubClient {
         }
 
         let xetClient = try getXetClient()
-        let token = try? await httpClient.tokenProvider.getToken()
+        let token = try? httpClient.tokenProvider.getToken()
 
         // Get file metadata (includes hash and refresh route)
         guard
@@ -629,18 +624,6 @@ extension HubClient {
             return nil
         }
 
-        // Get or fetch CAS JWT using refresh route
-        let jwt = try await getCachedJwt(
-            refreshRoute: metadata.refreshRoute,
-            token: token
-        )
-
-        // Create file info from metadata
-        let fileInfo = XetFileInfo(
-            hash: metadata.fileHash,
-            fileSize: metadata.size
-        )
-
         // Ensure destination directory exists
         let destinationDirectory = destination.deletingLastPathComponent()
         try FileManager.default.createDirectory(
@@ -648,7 +631,7 @@ extension HubClient {
             withIntermediateDirectories: true
         )
 
-        // Download from CAS
+        // Setup progress tracking
         actor BytesTracker {
             var totalBytesWritten: Int64 = 0
             let progressObject: Progress?
@@ -671,19 +654,56 @@ extension HubClient {
         }
 
         let tracker = BytesTracker(progressObject: progressObject)
-
-        print("[HubClient+Files] Starting Xet download for \(repo.rawValue)/\(repoPath)")
-        _ = try await xetClient.downloadFromCas(
-            fileInfo: fileInfo,
-            jwt: jwt,
-            destination: destination,
-            progress: { bytesJustWritten in
-                Task {
-                    await tracker.addBytes(Int64(bytesJustWritten))
-                }
+        let progressHandler: XetHubClient.ProgressHandler = { bytesJustWritten in
+            Task {
+                await tracker.addBytes(Int64(bytesJustWritten))
             }
-        )
-        print("[HubClient+Files] Finished Xet download for \(repo.rawValue)/\(repoPath)")
+        }
+
+        if let fileHash = metadata.fileHash, let refreshRoute = metadata.refreshRoute {
+            // Xet file: Use CAS download
+
+            // Get or fetch CAS JWT using refresh route
+            let jwt = try await getCachedJwt(
+                refreshRoute: refreshRoute,
+                token: token
+            )
+
+            let fileInfo = XetFileInfo(
+                hash: fileHash,
+                fileSize: metadata.size
+            )
+
+            _ = try await xetClient.downloadFromCas(
+                fileInfo: fileInfo,
+                jwt: jwt,
+                destination: destination,
+                progress: progressHandler
+            )
+
+        } else {
+            // Non-Xet file: Use parallel HTTP download
+
+            guard let url = URL(string: metadata.downloadURL) else {
+                return nil
+            }
+
+            var headers: [String: String] = [:]
+            if let token = token {
+                headers["Authorization"] = "Bearer \(token)"
+            }
+
+            let request = HubDownloadRequest(
+                source: url,
+                destination: destination,
+                headers: headers
+            )
+
+            _ = try await xetClient.download(
+                request,
+                progress: progressHandler
+            )
+        }
 
         return destination
     }
