@@ -266,10 +266,9 @@ public extension HubClient {
                 at: destination.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
-            // Copy from cache to destination (resolve symlinks first)
-            let resolvedPath = cachedPath.resolvingSymlinksInPath()
+            // Copy from cache to destination
             try? FileManager.default.removeItem(at: destination)
-            try FileManager.default.copyItem(at: resolvedPath, to: destination)
+            try FileManager.default.copyItem(at: cachedPath, to: destination)
             progress?.completedUnitCount = progress?.totalUnitCount ?? 100
             return destination
         }
