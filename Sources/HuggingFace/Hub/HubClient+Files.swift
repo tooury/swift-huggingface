@@ -240,6 +240,7 @@ public extension HubClient {
     ///   - revision: Git revision
     ///   - useRaw: Use raw endpoint
     ///   - inBackground: Whether to use a background URL session for the download
+    ///   - forceDownload: Skip cache and always download from server
     ///   - progress: Optional Progress object to track download progress and throughput
     /// - Returns: Final destination URL
     func downloadFile(
@@ -250,10 +251,12 @@ public extension HubClient {
         revision: String = "main",
         useRaw: Bool = false,
         inBackground: Bool = false,
+        forceDownload: Bool = false,
         progress: Progress? = nil
     ) async throws -> URL {
-        // Check cache first
-        if let cache = cache,
+        // Check cache first (unless forceDownload is true)
+        if !forceDownload,
+            let cache = cache,
             let cachedPath = cache.cachedFilePath(
                 repo: repo,
                 kind: kind,
