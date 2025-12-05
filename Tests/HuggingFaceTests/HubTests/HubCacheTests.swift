@@ -572,4 +572,195 @@ struct HubCacheTests {
 
         #expect(cache.cacheDirectory.path == tempDirectory.path)
     }
+
+    // MARK: - Path Traversal Validation Tests
+
+    @Test("Store file rejects etag with path traversal")
+    func storeFileRejectsEtagPathTraversal() throws {
+        let cache = HubCache(cacheDirectory: tempDirectory)
+        let repoID: Repo.ID = "user/repo"
+        let commitHash = "abc123def456789012345678901234567890abcd"
+
+        let sourceFile = tempDirectory.appendingPathComponent("source.txt")
+        try "content".write(to: sourceFile, atomically: true, encoding: .utf8)
+
+        #expect(throws: HubCacheError.self) {
+            try cache.storeFile(
+                at: sourceFile,
+                repo: repoID,
+                kind: .model,
+                revision: commitHash,
+                filename: "file.txt",
+                etag: "../../../etc/passwd"
+            )
+        }
+    }
+
+    @Test("Store file rejects revision with path traversal")
+    func storeFileRejectsRevisionPathTraversal() throws {
+        let cache = HubCache(cacheDirectory: tempDirectory)
+        let repoID: Repo.ID = "user/repo"
+
+        let sourceFile = tempDirectory.appendingPathComponent("source.txt")
+        try "content".write(to: sourceFile, atomically: true, encoding: .utf8)
+
+        #expect(throws: HubCacheError.self) {
+            try cache.storeFile(
+                at: sourceFile,
+                repo: repoID,
+                kind: .model,
+                revision: "../../../.ssh/authorized_keys",
+                filename: "file.txt",
+                etag: "valid-etag"
+            )
+        }
+    }
+
+    @Test("Store file rejects etag with forward slash")
+    func storeFileRejectsEtagWithSlash() throws {
+        let cache = HubCache(cacheDirectory: tempDirectory)
+        let repoID: Repo.ID = "user/repo"
+        let commitHash = "abc123def456789012345678901234567890abcd"
+
+        let sourceFile = tempDirectory.appendingPathComponent("source.txt")
+        try "content".write(to: sourceFile, atomically: true, encoding: .utf8)
+
+        #expect(throws: HubCacheError.self) {
+            try cache.storeFile(
+                at: sourceFile,
+                repo: repoID,
+                kind: .model,
+                revision: commitHash,
+                filename: "file.txt",
+                etag: "path/to/file"
+            )
+        }
+    }
+
+    @Test("Store file rejects etag with backslash")
+    func storeFileRejectsEtagWithBackslash() throws {
+        let cache = HubCache(cacheDirectory: tempDirectory)
+        let repoID: Repo.ID = "user/repo"
+        let commitHash = "abc123def456789012345678901234567890abcd"
+
+        let sourceFile = tempDirectory.appendingPathComponent("source.txt")
+        try "content".write(to: sourceFile, atomically: true, encoding: .utf8)
+
+        #expect(throws: HubCacheError.self) {
+            try cache.storeFile(
+                at: sourceFile,
+                repo: repoID,
+                kind: .model,
+                revision: commitHash,
+                filename: "file.txt",
+                etag: "path\\to\\file"
+            )
+        }
+    }
+
+    @Test("Store file rejects empty etag")
+    func storeFileRejectsEmptyEtag() throws {
+        let cache = HubCache(cacheDirectory: tempDirectory)
+        let repoID: Repo.ID = "user/repo"
+        let commitHash = "abc123def456789012345678901234567890abcd"
+
+        let sourceFile = tempDirectory.appendingPathComponent("source.txt")
+        try "content".write(to: sourceFile, atomically: true, encoding: .utf8)
+
+        #expect(throws: HubCacheError.self) {
+            try cache.storeFile(
+                at: sourceFile,
+                repo: repoID,
+                kind: .model,
+                revision: commitHash,
+                filename: "file.txt",
+                etag: ""
+            )
+        }
+    }
+
+    @Test("Store file rejects etag with null byte")
+    func storeFileRejectsEtagWithNullByte() throws {
+        let cache = HubCache(cacheDirectory: tempDirectory)
+        let repoID: Repo.ID = "user/repo"
+        let commitHash = "abc123def456789012345678901234567890abcd"
+
+        let sourceFile = tempDirectory.appendingPathComponent("source.txt")
+        try "content".write(to: sourceFile, atomically: true, encoding: .utf8)
+
+        #expect(throws: HubCacheError.self) {
+            try cache.storeFile(
+                at: sourceFile,
+                repo: repoID,
+                kind: .model,
+                revision: commitHash,
+                filename: "file.txt",
+                etag: "etag\0injected"
+            )
+        }
+    }
+
+    @Test("Store data rejects etag with path traversal")
+    func storeDataRejectsEtagPathTraversal() throws {
+        let cache = HubCache(cacheDirectory: tempDirectory)
+        let repoID: Repo.ID = "user/repo"
+        let commitHash = "abc123def456789012345678901234567890abcd"
+
+        #expect(throws: HubCacheError.self) {
+            try cache.storeData(
+                Data("content".utf8),
+                repo: repoID,
+                kind: .model,
+                revision: commitHash,
+                filename: "file.txt",
+                etag: "..\\..\\windows\\system32"
+            )
+        }
+    }
+
+    @Test("Store data rejects revision with path traversal")
+    func storeDataRejectsRevisionPathTraversal() throws {
+        let cache = HubCache(cacheDirectory: tempDirectory)
+        let repoID: Repo.ID = "user/repo"
+
+        #expect(throws: HubCacheError.self) {
+            try cache.storeData(
+                Data("content".utf8),
+                repo: repoID,
+                kind: .model,
+                revision: "..%2F..%2F..",
+                filename: "file.txt",
+                etag: "valid-etag"
+            )
+        }
+    }
+
+    @Test("Store file accepts valid etag and revision")
+    func storeFileAcceptsValidComponents() throws {
+        let cache = HubCache(cacheDirectory: tempDirectory)
+        let repoID: Repo.ID = "user/repo"
+        let commitHash = "abc123def456789012345678901234567890abcd"
+        let etag = "abc123def456-valid_etag.with"  // Valid chars including dots and hyphens
+
+        let sourceFile = tempDirectory.appendingPathComponent("source.txt")
+        try "content".write(to: sourceFile, atomically: true, encoding: .utf8)
+
+        // Should not throw
+        try cache.storeFile(
+            at: sourceFile,
+            repo: repoID,
+            kind: .model,
+            revision: commitHash,
+            filename: "file.txt",
+            etag: etag
+        )
+
+        let cachedPath = cache.cachedFilePath(
+            repo: repoID,
+            kind: .model,
+            revision: commitHash,
+            filename: "file.txt"
+        )
+        #expect(cachedPath != nil)
+    }
 }

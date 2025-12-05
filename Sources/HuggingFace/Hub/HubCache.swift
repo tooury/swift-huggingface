@@ -269,6 +269,10 @@ public struct HubCache: Sendable {
     ) throws {
         let normalizedEtag = normalizeEtag(etag)
 
+        // Validate path components to prevent path traversal attacks
+        try validatePathComponent(normalizedEtag)
+        try validatePathComponent(revision)
+
         // Create directories
         let blobsDir = blobsDirectory(repo: repo, kind: kind)
         let snapshotsDir = snapshotsDirectory(repo: repo, kind: kind)
@@ -338,6 +342,10 @@ public struct HubCache: Sendable {
         ref: String? = nil
     ) throws {
         let normalizedEtag = normalizeEtag(etag)
+
+        // Validate path components to prevent path traversal attacks
+        try validatePathComponent(normalizedEtag)
+        try validatePathComponent(revision)
 
         // Create directories
         let blobsDir = blobsDirectory(repo: repo, kind: kind)
@@ -412,6 +420,36 @@ public struct HubCache: Sendable {
         return string.allSatisfy { $0.isHexDigit }
     }
 
+    /// Validates that a path component is safe and does not allow path traversal.
+    ///
+    /// This prevents attacks where malicious servers could send crafted ETag or
+    /// revision values containing `..` or path separators to write files outside
+    /// the cache directory.
+    ///
+    /// - Parameter component: The path component to validate.
+    /// - Throws: `HubCacheError.invalidPathComponent` if the component is unsafe.
+    private func validatePathComponent(_ component: String) throws {
+        // Check for empty or whitespace-only strings
+        guard !component.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw HubCacheError.invalidPathComponent(component)
+        }
+
+        // Check for path traversal attempts
+        if component.contains("..") {
+            throw HubCacheError.invalidPathComponent(component)
+        }
+
+        // Check for path separators
+        if component.contains("/") || component.contains("\\") {
+            throw HubCacheError.invalidPathComponent(component)
+        }
+
+        // Check for null bytes
+        if component.contains("\0") {
+            throw HubCacheError.invalidPathComponent(component)
+        }
+    }
+
     /// Calculates the relative path from a snapshot file to its blob.
     ///
     /// The path needs to go up to the repo directory, then into blobs.
@@ -448,6 +486,20 @@ public struct HubCache: Sendable {
         } catch {
             // Symlinks not supported on this platform/configuration
             return false
+        }
+    }
+}
+
+/// Errors that can occur during cache operations.
+public enum HubCacheError: Error, LocalizedError {
+    /// A path component contains unsafe characters that could enable path traversal attacks.
+    case invalidPathComponent(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidPathComponent(let component):
+            return
+                "Invalid path component '\(component)': contains path traversal characters or is empty"
         }
     }
 }
