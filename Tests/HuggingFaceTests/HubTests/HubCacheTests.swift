@@ -160,6 +160,18 @@ struct HubCacheTests {
         #expect(resolved == newCommit)
     }
 
+    @Test("Update ref handles nested refs like refs/pr/5")
+    func updateRefNestedPath() throws {
+        let cache = HubCache(cacheDirectory: tempDirectory)
+        let repoID: Repo.ID = "user/repo"
+        let commitHash = "abc123def456789012345678901234567890abcd"
+
+        try cache.updateRef(repo: repoID, kind: .model, ref: "refs/pr/5", commit: commitHash)
+
+        let resolved = cache.resolveRevision(repo: repoID, kind: .model, ref: "refs/pr/5")
+        #expect(resolved == commitHash)
+    }
+
     // MARK: - Etag Normalization Tests
 
     @Test("Normalize etag removes quotes")

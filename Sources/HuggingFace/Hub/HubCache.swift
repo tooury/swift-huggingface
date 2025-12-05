@@ -158,13 +158,18 @@ public struct HubCache: Sendable {
     /// - Parameters:
     ///   - repo: The repository identifier.
     ///   - kind: The kind of repository.
-    ///   - ref: The reference name (e.g., "main").
+    ///   - ref: The reference name (e.g., "main", "refs/pr/5").
     ///   - commit: The commit hash to store.
     public func updateRef(repo: Repo.ID, kind: Repo.Kind, ref: String, commit: String) throws {
         let refsDir = refsDirectory(repo: repo, kind: kind)
-        try FileManager.default.createDirectory(at: refsDir, withIntermediateDirectories: true)
-
         let refFile = refsDir.appendingPathComponent(ref)
+
+        // Create parent directories for nested refs (e.g., "refs/pr/5")
+        try FileManager.default.createDirectory(
+            at: refFile.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
         try commit.write(to: refFile, atomically: true, encoding: .utf8)
     }
 
