@@ -134,10 +134,36 @@ final class HTTPClient: @unchecked Sendable {
         params: [String: Value]? = nil,
         headers: [String: String]? = nil
     ) -> AsyncThrowingStream<T, Swift.Error> {
+        performFetchStream(
+            method,
+            requestBuilder: { [self] in
+                try await self.createRequest(method, path, params: params, headers: headers)
+            }
+        )
+    }
+
+    func fetchStream<T: Decodable & Sendable>(
+        _ method: HTTPMethod,
+        url: URL,
+        params: [String: Value]? = nil,
+        headers: [String: String]? = nil
+    ) -> AsyncThrowingStream<T, Swift.Error> {
+        performFetchStream(
+            method,
+            requestBuilder: { [self] in
+                try await self.createRequest(method, url: url, params: params, headers: headers)
+            }
+        )
+    }
+
+    private func performFetchStream<T: Decodable & Sendable>(
+        _ method: HTTPMethod,
+        requestBuilder: @escaping @Sendable () async throws -> URLRequest
+    ) -> AsyncThrowingStream<T, Swift.Error> {
         AsyncThrowingStream { @Sendable continuation in
             let task = Task {
                 do {
-                    let request = try await createRequest(method, path, params: params, headers: headers)
+                    let request = try await requestBuilder()
                     let (bytes, response) = try await session.bytes(for: request)
                     let httpResponse = try validateResponse(response)
 
@@ -191,6 +217,20 @@ final class HTTPClient: @unchecked Sendable {
         headers: [String: String]? = nil
     ) async throws -> Data {
         let request = try await createRequest(method, path, params: params, headers: headers)
+        return try await performFetchData(request: request)
+    }
+
+    func fetchData(
+        _ method: HTTPMethod,
+        url: URL,
+        params: [String: Value]? = nil,
+        headers: [String: String]? = nil
+    ) async throws -> Data {
+        let request = try await createRequest(method, url: url, params: params, headers: headers)
+        return try await performFetchData(request: request)
+    }
+
+    private func performFetchData(request: URLRequest) async throws -> Data {
         let (data, response) = try await session.data(for: request)
         let _ = try validateResponse(response, data: data)
 
