@@ -479,9 +479,10 @@ struct HubCacheTests {
         #expect(cachedPath1 != nil)
         #expect(cachedPath2 != nil)
 
-        // Verify only one blob exists
+        // Verify only one blob exists (excluding .lock files)
         let blobsDir = cache.blobsDirectory(repo: repoID, kind: .model)
-        let blobs = try FileManager.default.contentsOfDirectory(atPath: blobsDir.path)
+        let allFiles = try FileManager.default.contentsOfDirectory(atPath: blobsDir.path)
+        let blobs = allFiles.filter { !$0.hasSuffix(".lock") }
         #expect(blobs.count == 1)
         #expect(blobs.first == etag)
     }

@@ -247,6 +247,9 @@ public struct HubCache: Sendable {
     /// On platforms that don't support symlinks (like some Windows configurations),
     /// the file is copied directly to the snapshots directory instead.
     ///
+    /// File locking is used to coordinate concurrent access to blob files,
+    /// preventing race conditions when multiple processes download the same file.
+    ///
     /// - Parameters:
     ///   - sourceURL: The URL of the file to store.
     ///   - repo: The repository identifier.
@@ -274,10 +277,14 @@ public struct HubCache: Sendable {
         try FileManager.default.createDirectory(at: blobsDir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: snapshotsDir, withIntermediateDirectories: true)
 
-        // Store blob (content-addressed)
+        // Store blob (content-addressed) with file locking
         let blobPath = blobsDir.appendingPathComponent(normalizedEtag)
-        if !FileManager.default.fileExists(atPath: blobPath.path) {
-            try FileManager.default.copyItem(at: sourceURL, to: blobPath)
+        let lock = FileLock(path: blobPath)
+
+        try lock.withLock {
+            if !FileManager.default.fileExists(atPath: blobPath.path) {
+                try FileManager.default.copyItem(at: sourceURL, to: blobPath)
+            }
         }
 
         // Create snapshot entry (symlink or copy)
@@ -310,6 +317,9 @@ public struct HubCache: Sendable {
 
     /// Stores data directly in the cache.
     ///
+    /// File locking is used to coordinate concurrent access to blob files,
+    /// preventing race conditions when multiple processes download the same file.
+    ///
     /// - Parameters:
     ///   - data: The data to store.
     ///   - repo: The repository identifier.
@@ -337,10 +347,14 @@ public struct HubCache: Sendable {
         try FileManager.default.createDirectory(at: blobsDir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: snapshotsDir, withIntermediateDirectories: true)
 
-        // Store blob
+        // Store blob with file locking
         let blobPath = blobsDir.appendingPathComponent(normalizedEtag)
-        if !FileManager.default.fileExists(atPath: blobPath.path) {
-            try data.write(to: blobPath, options: .atomic)
+        let lock = FileLock(path: blobPath)
+
+        try lock.withLock {
+            if !FileManager.default.fileExists(atPath: blobPath.path) {
+                try data.write(to: blobPath, options: .atomic)
+            }
         }
 
         // Create snapshot entry
