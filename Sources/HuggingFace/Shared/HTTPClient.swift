@@ -71,7 +71,7 @@ final class HTTPClient: @unchecked Sendable {
         params: [String: Value]? = nil,
         headers: [String: String]? = nil
     ) async throws -> T {
-        let request = try createRequest(method, path, params: params, headers: headers)
+        let request = try await createRequest(method, path, params: params, headers: headers)
         let (data, response) = try await session.data(for: request)
         let httpResponse = try validateResponse(response, data: data)
 
@@ -98,7 +98,7 @@ final class HTTPClient: @unchecked Sendable {
         params: [String: Value]? = nil,
         headers: [String: String]? = nil
     ) async throws -> PaginatedResponse<T> {
-        let request = try createRequest(method, path, params: params, headers: headers)
+        let request = try await createRequest(method, path, params: params, headers: headers)
         let (data, response) = try await session.data(for: request)
         let httpResponse = try validateResponse(response, data: data)
 
@@ -123,7 +123,7 @@ final class HTTPClient: @unchecked Sendable {
         AsyncThrowingStream { @Sendable continuation in
             let task = Task {
                 do {
-                    let request = try createRequest(method, path, params: params, headers: headers)
+                    let request = try await createRequest(method, path, params: params, headers: headers)
                     let (bytes, response) = try await session.bytes(for: request)
                     let httpResponse = try validateResponse(response)
 
@@ -176,7 +176,7 @@ final class HTTPClient: @unchecked Sendable {
         params: [String: Value]? = nil,
         headers: [String: String]? = nil
     ) async throws -> Data {
-        let request = try createRequest(method, path, params: params, headers: headers)
+        let request = try await createRequest(method, path, params: params, headers: headers)
         let (data, response) = try await session.data(for: request)
         let _ = try validateResponse(response, data: data)
 
@@ -188,7 +188,7 @@ final class HTTPClient: @unchecked Sendable {
         _ path: String,
         params: [String: Value]? = nil,
         headers: [String: String]? = nil
-    ) throws -> URLRequest {
+    ) async throws -> URLRequest {
         var urlComponents = URLComponents(url: host, resolvingAgainstBaseURL: true)
         urlComponents?.path = path
 
@@ -230,7 +230,7 @@ final class HTTPClient: @unchecked Sendable {
         }
 
         // Get authentication token from provider
-        if let token = try tokenProvider.getToken() {
+        if let token = try await tokenProvider.getToken() {
             request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
 

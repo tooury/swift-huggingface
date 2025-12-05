@@ -180,7 +180,7 @@ public indirect enum TokenProvider: Sendable {
     /// let token = try await provider.getToken()
     /// // Returns: "hf_abc123"
     /// ```
-    public func getToken() throws -> String? {
+    public func getToken() async throws -> String? {
         switch self {
         case .fixed(let token):
             return token
@@ -188,23 +188,19 @@ public indirect enum TokenProvider: Sendable {
         case .environment:
             return try getTokenFromEnvironment()
 
-        case .oauth:
-            fatalError(
-                "OAuth token provider requires async context. Use getToken() in an async context or switch to a synchronous provider."
-            )
+        case .oauth(let getToken):
+            return try await getToken()
 
         case .composite(let providers):
             for provider in providers {
-                if let token = try provider.getToken() {
+                if let token = try await provider.getToken() {
                     return token
                 }
             }
             return nil
 
         case .custom(let implementation):
-            fatalError(
-                "Custom async token provider requires async context. Use getToken() in an async context or switch to a synchronous provider."
-            )
+            return try await implementation()
 
         case .none:
             return nil
