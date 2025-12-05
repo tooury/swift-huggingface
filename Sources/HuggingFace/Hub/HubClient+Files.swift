@@ -49,7 +49,8 @@ public extension HubClient {
         let url = httpClient.host
             .appending(path: "api")
             .appending(path: kind.pluralized)
-            .appending(path: repo.description)
+            .appending(path: repo.namespace)
+            .appending(path: repo.name)
             .appending(path: "upload")
             .appending(component: branch)
         var request = try await httpClient.createRequest(.post, url: url)
@@ -201,7 +202,8 @@ public extension HubClient {
 
         let endpoint = useRaw ? "raw" : "resolve"
         let url = httpClient.host
-            .appending(path: repo.description)
+            .appending(path: repo.namespace)
+            .appending(path: repo.name)
             .appending(path: endpoint)
             .appending(component: revision)
             .appending(path: repoPath)
@@ -275,7 +277,8 @@ public extension HubClient {
 
         let endpoint = useRaw ? "raw" : "resolve"
         let url = httpClient.host
-            .appending(path: repo.description)
+            .appending(path: repo.namespace)
+            .appending(path: repo.name)
             .appending(path: endpoint)
             .appending(component: revision)
             .appending(path: repoPath)
@@ -440,7 +443,8 @@ public extension HubClient {
         let url = httpClient.host
             .appending(path: "api")
             .appending(path: kind.pluralized)
-            .appending(path: repo.description)
+            .appending(path: repo.namespace)
+            .appending(path: repo.name)
             .appending(path: "commit")
             .appending(component: branch)
         let operations = repoPaths.map { path in
@@ -495,7 +499,8 @@ public extension HubClient {
         let url = httpClient.host
             .appending(path: "api")
             .appending(path: kind.pluralized)
-            .appending(path: repo.description)
+            .appending(path: repo.namespace)
+            .appending(path: repo.name)
             .appending(path: "tree")
             .appending(component: revision)
         let params: [String: Value]? = recursive ? ["recursive": .bool(true)] : nil
@@ -517,7 +522,8 @@ public extension HubClient {
         revision: String = "main"
     ) async throws -> File {
         let url = httpClient.host
-            .appending(path: repo.description)
+            .appending(path: repo.namespace)
+            .appending(path: repo.name)
             .appending(path: "resolve")
             .appending(component: revision)
             .appending(path: repoPath)
