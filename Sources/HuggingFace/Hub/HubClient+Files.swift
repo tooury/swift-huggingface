@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import UniformTypeIdentifiers
 
@@ -178,11 +177,23 @@ public extension HubClient {
     func downloadContentsOfFile(
         at repoPath: String,
         from repo: Repo.ID,
-        kind _: Repo.Kind = .model,
+        kind: Repo.Kind = .model,
         revision: String = "main",
         useRaw: Bool = false,
         cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy
     ) async throws -> Data {
+        // Check cache first
+        if let cache = cache,
+            let cachedPath = cache.cachedFilePath(
+                repo: repo,
+                kind: kind,
+                revision: revision,
+                filename: repoPath
+            )
+        {
+            return try Data(contentsOf: cachedPath)
+        }
+
         let endpoint = useRaw ? "raw" : "resolve"
         let urlPath = "/\(repo)/\(endpoint)/\(revision)/\(repoPath)"
         var request = try httpClient.createRequest(.get, urlPath)
@@ -190,6 +201,23 @@ public extension HubClient {
 
         let (data, response) = try await session.data(for: request)
         _ = try httpClient.validateResponse(response, data: data)
+
+        // Store in cache if we have etag and commit info
+        if let cache = cache,
+            let httpResponse = response as? HTTPURLResponse,
+            let etag = httpResponse.value(forHTTPHeaderField: "ETag"),
+            let commitHash = httpResponse.value(forHTTPHeaderField: "X-Repo-Commit")
+        {
+            try? cache.storeData(
+                data,
+                repo: repo,
+                kind: kind,
+                revision: commitHash,
+                filename: repoPath,
+                etag: etag,
+                ref: revision != commitHash ? revision : nil
+            )
+        }
 
         return data
     }
@@ -209,12 +237,33 @@ public extension HubClient {
         at repoPath: String,
         from repo: Repo.ID,
         to destination: URL,
-        kind _: Repo.Kind = .model,
+        kind: Repo.Kind = .model,
         revision: String = "main",
         useRaw: Bool = false,
         cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy,
         progress: Progress? = nil
     ) async throws -> URL {
+        // Check cache first
+        if let cache = cache,
+            let cachedPath = cache.cachedFilePath(
+                repo: repo,
+                kind: kind,
+                revision: revision,
+                filename: repoPath
+            )
+        {
+            // Create parent directory if needed
+            try FileManager.default.createDirectory(
+                at: destination.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            // Copy from cache to destination
+            try? FileManager.default.removeItem(at: destination)
+            try FileManager.default.copyItem(at: cachedPath, to: destination)
+            progress?.completedUnitCount = progress?.totalUnitCount ?? 100
+            return destination
+        }
+
         let endpoint = useRaw ? "raw" : "resolve"
         let urlPath = "/\(repo)/\(endpoint)/\(revision)/\(repoPath)"
         var request = try httpClient.createRequest(.get, urlPath)
@@ -225,6 +274,29 @@ public extension HubClient {
             delegate: progress.map { DownloadProgressDelegate(progress: $0) }
         )
         _ = try httpClient.validateResponse(response, data: nil)
+
+        // Store in cache before moving to destination
+        if let cache = cache,
+            let httpResponse = response as? HTTPURLResponse,
+            let etag = httpResponse.value(forHTTPHeaderField: "ETag"),
+            let commitHash = httpResponse.value(forHTTPHeaderField: "X-Repo-Commit")
+        {
+            try? cache.storeFile(
+                at: tempURL,
+                repo: repo,
+                kind: kind,
+                revision: commitHash,
+                filename: repoPath,
+                etag: etag,
+                ref: revision != commitHash ? revision : nil
+            )
+        }
+
+        // Create parent directory if needed
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
 
         // Move from temporary location to final destination
         try? FileManager.default.removeItem(at: destination)
@@ -457,6 +529,11 @@ public extension HubClient {
 
 public extension HubClient {
     /// Download a repository snapshot to a local directory.
+    ///
+    /// This method downloads all files from a repository to the specified destination.
+    /// Files are automatically cached in the Python-compatible cache directory,
+    /// allowing cache reuse between Swift and Python Hugging Face clients.
+    ///
     /// - Parameters:
     ///   - repo: Repository identifier
     ///   - kind: Kind of repository
@@ -473,13 +550,6 @@ public extension HubClient {
         matching globs: [String] = [],
         progressHandler: ((Progress) -> Void)? = nil
     ) async throws -> URL {
-        let repoDestination = destination
-        let repoMetadataDestination =
-            repoDestination
-            .appendingPathComponent(".cache")
-            .appendingPathComponent("huggingface")
-            .appendingPathComponent("download")
-
         let filenames = try await listFiles(in: repo, kind: kind, revision: revision, recursive: true)
             .map(\.path)
             .filter { filename in
@@ -494,25 +564,9 @@ public extension HubClient {
 
         for filename in filenames {
             let fileProgress = Progress(totalUnitCount: 100, parent: progress, pendingUnitCount: 1)
+            let fileDestination = destination.appendingPathComponent(filename)
 
-            let fileDestination = repoDestination.appendingPathComponent(filename)
-            let metadataDestination = repoMetadataDestination.appendingPathComponent(filename + ".metadata")
-
-            let localMetadata = readDownloadMetadata(at: metadataDestination)
-            let remoteFile = try await getFile(at: filename, in: repo, kind: kind, revision: revision)
-
-            let localCommitHash = localMetadata?.commitHash ?? ""
-            let remoteCommitHash = remoteFile.revision ?? ""
-
-            if isValidHash(remoteCommitHash, pattern: commitHashPattern),
-                FileManager.default.fileExists(atPath: fileDestination.path),
-                localMetadata != nil,
-                localCommitHash == remoteCommitHash
-            {
-                fileProgress.completedUnitCount = 100
-                continue
-            }
-
+            // downloadFile handles cache lookup and storage automatically
             _ = try await downloadFile(
                 at: filename,
                 from: repo,
@@ -522,58 +576,15 @@ public extension HubClient {
                 progress: fileProgress
             )
 
-            if let etag = remoteFile.etag, let revision = remoteFile.revision {
-                try writeDownloadMetadata(
-                    commitHash: revision,
-                    etag: etag,
-                    to: metadataDestination
-                )
-            }
-
             if Task.isCancelled {
-                return repoDestination
+                return destination
             }
 
             fileProgress.completedUnitCount = 100
         }
 
         progressHandler?(progress)
-        return repoDestination
-    }
-}
-
-// MARK: - Metadata Helpers
-
-extension HubClient {
-    private var sha256Pattern: String { "^[0-9a-f]{64}$" }
-    private var commitHashPattern: String { "^[0-9a-f]{40}$" }
-
-    /// Read metadata about a file in the local directory.
-    func readDownloadMetadata(at metadataPath: URL) -> LocalDownloadFileMetadata? {
-        FileManager.default.readDownloadMetadata(at: metadataPath)
-    }
-
-    /// Write metadata about a downloaded file.
-    func writeDownloadMetadata(commitHash: String, etag: String, to metadataPath: URL) throws {
-        try FileManager.default.writeDownloadMetadata(
-            commitHash: commitHash,
-            etag: etag,
-            to: metadataPath
-        )
-    }
-
-    /// Check if a hash matches the expected pattern.
-    func isValidHash(_ hash: String, pattern: String) -> Bool {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else {
-            return false
-        }
-        let range = NSRange(location: 0, length: hash.utf16.count)
-        return regex.firstMatch(in: hash, options: [], range: range) != nil
-    }
-
-    /// Compute SHA256 hash of a file.
-    func computeFileHash(at url: URL) throws -> String {
-        try FileManager.default.computeFileHash(at: url)
+        return destination
     }
 }
 
@@ -582,90 +593,6 @@ extension HubClient {
 private struct UploadResponse: Codable {
     let path: String
     let commit: String?
-}
-
-// MARK: -
-
-private extension FileManager {
-    /// Read metadata about a file in the local directory.
-    func readDownloadMetadata(at metadataPath: URL) -> LocalDownloadFileMetadata? {
-        guard fileExists(atPath: metadataPath.path) else {
-            return nil
-        }
-
-        do {
-            let contents = try String(contentsOf: metadataPath, encoding: .utf8)
-            let lines = contents.components(separatedBy: .newlines)
-
-            guard lines.count >= 3 else {
-                try? removeItem(at: metadataPath)
-                return nil
-            }
-
-            let commitHash = lines[0].trimmingCharacters(in: .whitespacesAndNewlines)
-            let etag = lines[1].trimmingCharacters(in: .whitespacesAndNewlines)
-
-            guard let timestamp = Double(lines[2].trimmingCharacters(in: .whitespacesAndNewlines))
-            else {
-                try? removeItem(at: metadataPath)
-                return nil
-            }
-
-            let timestampDate = Date(timeIntervalSince1970: timestamp)
-            let filename = metadataPath.lastPathComponent.replacingOccurrences(
-                of: ".metadata",
-                with: ""
-            )
-
-            return LocalDownloadFileMetadata(
-                commitHash: commitHash,
-                etag: etag,
-                filename: filename,
-                timestamp: timestampDate
-            )
-        } catch {
-            try? removeItem(at: metadataPath)
-            return nil
-        }
-    }
-
-    /// Write metadata about a downloaded file.
-    func writeDownloadMetadata(commitHash: String, etag: String, to metadataPath: URL) throws {
-        let metadataContent = "\(commitHash)\n\(etag)\n\(Date().timeIntervalSince1970)\n"
-        try createDirectory(
-            at: metadataPath.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        try metadataContent.write(to: metadataPath, atomically: true, encoding: .utf8)
-    }
-
-    /// Compute SHA256 hash of a file.
-    func computeFileHash(at url: URL) throws -> String {
-        guard let fileHandle = try? FileHandle(forReadingFrom: url) else {
-            throw HTTPClientError.unexpectedError("Unable to open file: \(url.path)")
-        }
-
-        defer {
-            try? fileHandle.close()
-        }
-
-        var hasher = SHA256()
-        let chunkSize = 1024 * 1024
-
-        while autoreleasepool(invoking: {
-            guard let nextChunk = try? fileHandle.read(upToCount: chunkSize),
-                !nextChunk.isEmpty
-            else {
-                return false
-            }
-
-            hasher.update(data: nextChunk)
-            return true
-        }) {}
-
-        let digest = hasher.finalize()
-        return digest.map { String(format: "%02x", $0) }.joined()
-    }
 }
 
 // MARK: -
