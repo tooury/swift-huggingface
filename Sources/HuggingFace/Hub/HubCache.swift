@@ -278,6 +278,9 @@ public struct HubCache: Sendable {
         let snapshotsDir = snapshotsDirectory(repo: repo, kind: kind)
             .appendingPathComponent(revision)
 
+        // Validate filename before creating directories or writing files
+        try validateFilename(filename, withinDirectory: snapshotsDir)
+
         try FileManager.default.createDirectory(at: blobsDir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: snapshotsDir, withIntermediateDirectories: true)
 
@@ -352,6 +355,9 @@ public struct HubCache: Sendable {
         let snapshotsDir = snapshotsDirectory(repo: repo, kind: kind)
             .appendingPathComponent(revision)
 
+        // Validate filename before creating directories or writing files
+        try validateFilename(filename, withinDirectory: snapshotsDir)
+
         try FileManager.default.createDirectory(at: blobsDir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: snapshotsDir, withIntermediateDirectories: true)
 
@@ -422,32 +428,64 @@ public struct HubCache: Sendable {
 
     /// Validates that a path component is safe and does not allow path traversal.
     ///
-    /// This prevents attacks where malicious servers could send crafted ETag or
-    /// revision values containing `..` or path separators to write files outside
-    /// the cache directory.
+    /// This prevents attacks where malicious servers could send crafted ETag,
+    /// revision, or filename values to write files outside the cache directory.
     ///
-    /// - Parameter component: The path component to validate.
-    /// - Throws: `HubCacheError.invalidPathComponent` if the component is unsafe.
+    /// - Parameters:
+    ///   - value: The path value to validate.
+    ///   - allowSlashes: Whether to allow forward slashes (for nested filenames).
+    ///   - baseDirectory: If provided, validates the resolved path stays within this directory.
+    /// - Throws: `HubCacheError.invalidPathComponent` if the value is unsafe.
+    private func validatePathValue(
+        _ value: String,
+        allowSlashes: Bool = false,
+        withinDirectory baseDirectory: URL? = nil
+    ) throws {
+        guard !value.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw HubCacheError.invalidPathComponent(value)
+        }
+
+        if value.contains("\0") {
+            throw HubCacheError.invalidPathComponent(value)
+        }
+
+        if value.contains("\\") {
+            throw HubCacheError.invalidPathComponent(value)
+        }
+
+        if allowSlashes {
+            if value.hasPrefix("/") {
+                throw HubCacheError.invalidPathComponent(value)
+            }
+            let components = value.split(separator: "/", omittingEmptySubsequences: false)
+            for component in components {
+                if component == ".." || component.isEmpty {
+                    throw HubCacheError.invalidPathComponent(value)
+                }
+            }
+        } else {
+            if value.contains("..") || value.contains("/") {
+                throw HubCacheError.invalidPathComponent(value)
+            }
+        }
+
+        if let baseDirectory = baseDirectory {
+            let resolvedPath = baseDirectory.appendingPathComponent(value).standardized
+            let basePath = baseDirectory.standardized.path
+            guard resolvedPath.path.hasPrefix(basePath + "/") || resolvedPath.path == basePath else {
+                throw HubCacheError.invalidPathComponent(value)
+            }
+        }
+    }
+
+    /// Validates that a path component (etag, revision) is safe.
     private func validatePathComponent(_ component: String) throws {
-        // Check for empty or whitespace-only strings
-        guard !component.trimmingCharacters(in: .whitespaces).isEmpty else {
-            throw HubCacheError.invalidPathComponent(component)
-        }
+        try validatePathValue(component, allowSlashes: false)
+    }
 
-        // Check for path traversal attempts
-        if component.contains("..") {
-            throw HubCacheError.invalidPathComponent(component)
-        }
-
-        // Check for path separators
-        if component.contains("/") || component.contains("\\") {
-            throw HubCacheError.invalidPathComponent(component)
-        }
-
-        // Check for null bytes
-        if component.contains("\0") {
-            throw HubCacheError.invalidPathComponent(component)
-        }
+    /// Validates that a filename path is safe and remains within the base directory.
+    private func validateFilename(_ filename: String, withinDirectory baseDirectory: URL) throws {
+        try validatePathValue(filename, allowSlashes: true, withinDirectory: baseDirectory)
     }
 
     /// Calculates the relative path from a snapshot file to its blob.

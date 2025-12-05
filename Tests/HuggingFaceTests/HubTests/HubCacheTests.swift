@@ -763,4 +763,227 @@ struct HubCacheTests {
         )
         #expect(cachedPath != nil)
     }
+
+    // MARK: - Filename Path Traversal Validation Tests
+
+    @Test("Store file rejects filename with path traversal")
+    func storeFileRejectsFilenamePathTraversal() throws {
+        let cache = HubCache(cacheDirectory: tempDirectory)
+        let repoID: Repo.ID = "user/repo"
+        let commitHash = "abc123def456789012345678901234567890abcd"
+
+        let sourceFile = tempDirectory.appendingPathComponent("source.txt")
+        try "content".write(to: sourceFile, atomically: true, encoding: .utf8)
+
+        #expect(throws: HubCacheError.self) {
+            try cache.storeFile(
+                at: sourceFile,
+                repo: repoID,
+                kind: .model,
+                revision: commitHash,
+                filename: "../../../.ssh/authorized_keys",
+                etag: "valid-etag"
+            )
+        }
+    }
+
+    @Test("Store file rejects filename with embedded path traversal")
+    func storeFileRejectsFilenameEmbeddedTraversal() throws {
+        let cache = HubCache(cacheDirectory: tempDirectory)
+        let repoID: Repo.ID = "user/repo"
+        let commitHash = "abc123def456789012345678901234567890abcd"
+
+        let sourceFile = tempDirectory.appendingPathComponent("source.txt")
+        try "content".write(to: sourceFile, atomically: true, encoding: .utf8)
+
+        #expect(throws: HubCacheError.self) {
+            try cache.storeFile(
+                at: sourceFile,
+                repo: repoID,
+                kind: .model,
+                revision: commitHash,
+                filename: "models/../../../etc/passwd",
+                etag: "valid-etag"
+            )
+        }
+    }
+
+    @Test("Store file rejects filename with absolute path")
+    func storeFileRejectsFilenameAbsolutePath() throws {
+        let cache = HubCache(cacheDirectory: tempDirectory)
+        let repoID: Repo.ID = "user/repo"
+        let commitHash = "abc123def456789012345678901234567890abcd"
+
+        let sourceFile = tempDirectory.appendingPathComponent("source.txt")
+        try "content".write(to: sourceFile, atomically: true, encoding: .utf8)
+
+        #expect(throws: HubCacheError.self) {
+            try cache.storeFile(
+                at: sourceFile,
+                repo: repoID,
+                kind: .model,
+                revision: commitHash,
+                filename: "/etc/passwd",
+                etag: "valid-etag"
+            )
+        }
+    }
+
+    @Test("Store file rejects filename with backslash")
+    func storeFileRejectsFilenameBackslash() throws {
+        let cache = HubCache(cacheDirectory: tempDirectory)
+        let repoID: Repo.ID = "user/repo"
+        let commitHash = "abc123def456789012345678901234567890abcd"
+
+        let sourceFile = tempDirectory.appendingPathComponent("source.txt")
+        try "content".write(to: sourceFile, atomically: true, encoding: .utf8)
+
+        #expect(throws: HubCacheError.self) {
+            try cache.storeFile(
+                at: sourceFile,
+                repo: repoID,
+                kind: .model,
+                revision: commitHash,
+                filename: "..\\..\\windows\\system32\\config",
+                etag: "valid-etag"
+            )
+        }
+    }
+
+    @Test("Store file rejects empty filename")
+    func storeFileRejectsEmptyFilename() throws {
+        let cache = HubCache(cacheDirectory: tempDirectory)
+        let repoID: Repo.ID = "user/repo"
+        let commitHash = "abc123def456789012345678901234567890abcd"
+
+        let sourceFile = tempDirectory.appendingPathComponent("source.txt")
+        try "content".write(to: sourceFile, atomically: true, encoding: .utf8)
+
+        #expect(throws: HubCacheError.self) {
+            try cache.storeFile(
+                at: sourceFile,
+                repo: repoID,
+                kind: .model,
+                revision: commitHash,
+                filename: "",
+                etag: "valid-etag"
+            )
+        }
+    }
+
+    @Test("Store file rejects filename with null byte")
+    func storeFileRejectsFilenameNullByte() throws {
+        let cache = HubCache(cacheDirectory: tempDirectory)
+        let repoID: Repo.ID = "user/repo"
+        let commitHash = "abc123def456789012345678901234567890abcd"
+
+        let sourceFile = tempDirectory.appendingPathComponent("source.txt")
+        try "content".write(to: sourceFile, atomically: true, encoding: .utf8)
+
+        #expect(throws: HubCacheError.self) {
+            try cache.storeFile(
+                at: sourceFile,
+                repo: repoID,
+                kind: .model,
+                revision: commitHash,
+                filename: "config\0.json",
+                etag: "valid-etag"
+            )
+        }
+    }
+
+    @Test("Store file rejects filename with empty path component")
+    func storeFileRejectsFilenameEmptyComponent() throws {
+        let cache = HubCache(cacheDirectory: tempDirectory)
+        let repoID: Repo.ID = "user/repo"
+        let commitHash = "abc123def456789012345678901234567890abcd"
+
+        let sourceFile = tempDirectory.appendingPathComponent("source.txt")
+        try "content".write(to: sourceFile, atomically: true, encoding: .utf8)
+
+        #expect(throws: HubCacheError.self) {
+            try cache.storeFile(
+                at: sourceFile,
+                repo: repoID,
+                kind: .model,
+                revision: commitHash,
+                filename: "path//to/file.txt",
+                etag: "valid-etag"
+            )
+        }
+    }
+
+    @Test("Store data rejects filename with path traversal")
+    func storeDataRejectsFilenamePathTraversal() throws {
+        let cache = HubCache(cacheDirectory: tempDirectory)
+        let repoID: Repo.ID = "user/repo"
+        let commitHash = "abc123def456789012345678901234567890abcd"
+
+        #expect(throws: HubCacheError.self) {
+            try cache.storeData(
+                Data("content".utf8),
+                repo: repoID,
+                kind: .model,
+                revision: commitHash,
+                filename: "../../.ssh/authorized_keys",
+                etag: "valid-etag"
+            )
+        }
+    }
+
+    @Test("Store file accepts valid nested filename")
+    func storeFileAcceptsValidNestedFilename() throws {
+        let cache = HubCache(cacheDirectory: tempDirectory)
+        let repoID: Repo.ID = "user/repo"
+        let commitHash = "abc123def456789012345678901234567890abcd"
+        let filename = "tokenizer/vocab.json"
+
+        let sourceFile = tempDirectory.appendingPathComponent("source.txt")
+        try "content".write(to: sourceFile, atomically: true, encoding: .utf8)
+
+        try cache.storeFile(
+            at: sourceFile,
+            repo: repoID,
+            kind: .model,
+            revision: commitHash,
+            filename: filename,
+            etag: "valid-etag"
+        )
+
+        let cachedPath = cache.cachedFilePath(
+            repo: repoID,
+            kind: .model,
+            revision: commitHash,
+            filename: filename
+        )
+        #expect(cachedPath != nil)
+    }
+
+    @Test("Store file accepts deeply nested filename")
+    func storeFileAcceptsDeeplyNestedFilename() throws {
+        let cache = HubCache(cacheDirectory: tempDirectory)
+        let repoID: Repo.ID = "user/repo"
+        let commitHash = "abc123def456789012345678901234567890abcd"
+        let filename = "path/to/deeply/nested/config.json"
+
+        let sourceFile = tempDirectory.appendingPathComponent("source.txt")
+        try "content".write(to: sourceFile, atomically: true, encoding: .utf8)
+
+        try cache.storeFile(
+            at: sourceFile,
+            repo: repoID,
+            kind: .model,
+            revision: commitHash,
+            filename: filename,
+            etag: "valid-etag"
+        )
+
+        let cachedPath = cache.cachedFilePath(
+            repo: repoID,
+            kind: .model,
+            revision: commitHash,
+            filename: filename
+        )
+        #expect(cachedPath != nil)
+    }
 }
