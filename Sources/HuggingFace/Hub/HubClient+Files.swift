@@ -436,6 +436,19 @@ public extension HubClient {
             throw HTTPClientError.requestError("HTTP error: \(httpResponse.statusCode)")
         }
 
+        // If we requested a range but got a 200, server doesn't support resume
+        var resumeOffset = resumeOffset
+        if resumeOffset > 0 && httpResponse.statusCode == 200 {
+            // Server sent full content, need to start over
+            if let incompletePath = incompletePath, FileManager.default.fileExists(atPath: incompletePath.path) {
+                try? FileManager.default.removeItem(at: incompletePath)
+            }
+            resumeOffset = 0
+            if let progress = progress {
+                progress.completedUnitCount = 0
+            }
+        }
+
         // Determine output file
         let outputPath: URL
         if let incompletePath = incompletePath {
