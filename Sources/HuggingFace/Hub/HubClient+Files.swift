@@ -230,7 +230,8 @@ public extension HubClient {
     ///
     /// When `inBackground` is true, the download uses a background URL session that
     /// can continue even when the app is suspended. This is useful for large files
-    /// on iOS. Note that background downloads have less fine-grained resume control.
+    /// on iOS. Background downloads support resume via Range headers and incomplete
+    /// file tracking, just like foreground downloads.
     ///
     /// - Parameters:
     ///   - repoPath: Path to file in repository
@@ -307,7 +308,7 @@ public extension HubClient {
             }
         }
 
-        throw lastError ?? HTTPClientError.requestError("Download failed after \(maxRetries) retries")
+        throw lastError!
     }
 
     /// Performs the actual download with resume support (called by retry logic).
@@ -335,13 +336,32 @@ public extension HubClient {
         var incompletePath: URL?
 
         if let cache = cache {
-            let incompleteSize = cache.incompleteFileSize(repo: repo, kind: kind, filename: repoPath, etag: etag)
-            if incompleteSize > 0 && incompleteSize < expectedSize {
-                resumeOffset = Int64(incompleteSize)
-                incompletePath = cache.incompleteFilePath(repo: repo, kind: kind, filename: repoPath, etag: etag)
+            if let incompleteSize = cache.incompleteFileSize(repo: repo, kind: kind, filename: repoPath, etag: etag) {
+                if (expectedSize > 0 && incompleteSize > 0 && incompleteSize < expectedSize)
+                    || (expectedSize == 0 && incompleteSize > 0)
+                {
+                    resumeOffset = Int64(incompleteSize)
+                    incompletePath = cache.incompleteFilePath(
+                        repo: repo,
+                        kind: kind,
+                        filename: repoPath,
+                        etag: etag
+                    )
+                } else {
+                    incompletePath = try? cache.prepareIncompleteFile(
+                        repo: repo,
+                        kind: kind,
+                        filename: repoPath,
+                        etag: etag
+                    )
+                }
             } else {
-                // Prepare fresh incomplete file
-                incompletePath = try cache.prepareIncompleteFile(repo: repo, kind: kind, filename: repoPath, etag: etag)
+                incompletePath = try? cache.prepareIncompleteFile(
+                    repo: repo,
+                    kind: kind,
+                    filename: repoPath,
+                    etag: etag
+                )
             }
         }
 
@@ -365,14 +385,47 @@ public extension HubClient {
         let response: URLResponse
 
         if inBackground {
-            // Background downloads use URLSession download tasks
             let backgroundSession = createBackgroundSession(identifier: "hf-download-\(UUID().uuidString)")
-            (downloadedURL, response) = try await backgroundSession.download(
+            defer { backgroundSession.invalidateAndCancel() }
+
+            let tempDownloadURL: URL
+            (tempDownloadURL, response) = try await backgroundSession.download(
                 for: request,
-                delegate: progress.map { DownloadProgressDelegate(progress: $0) }
+                delegate: progress.map { DownloadProgressDelegate(progress: $0, resumeOffset: resumeOffset) }
             )
+
+            // If we're resuming, append the downloaded data to the incomplete file
+            if resumeOffset > 0, let incompletePath = incompletePath {
+                let sourceHandle = try FileHandle(forReadingFrom: tempDownloadURL)
+                let destHandle = try FileHandle(forWritingTo: incompletePath)
+                defer {
+                    try? sourceHandle.close()
+                    try? destHandle.close()
+                }
+                try destHandle.seekToEnd()
+
+                // Stream data in chunks to avoid loading large files into memory
+                let chunkSize = 1024 * 1024  // 1MB chunks
+                while autoreleasepool(invoking: {
+                    guard let chunk = try? sourceHandle.read(upToCount: chunkSize), !chunk.isEmpty else {
+                        return false
+                    }
+                    try? destHandle.write(contentsOf: chunk)
+                    return true
+                }) {}
+
+                downloadedURL = incompletePath
+                try? FileManager.default.removeItem(at: tempDownloadURL)
+            } else {
+                if let incompletePath = incompletePath {
+                    try? FileManager.default.removeItem(at: incompletePath)
+                    try FileManager.default.moveItem(at: tempDownloadURL, to: incompletePath)
+                    downloadedURL = incompletePath
+                } else {
+                    downloadedURL = tempDownloadURL
+                }
+            }
         } else {
-            // Foreground downloads use chunked streaming for better resume support
             (downloadedURL, response) = try await performChunkedDownload(
                 request: request,
                 incompletePath: incompletePath,
@@ -394,11 +447,9 @@ public extension HubClient {
             withIntermediateDirectories: true
         )
 
-        // Copy to final destination first (before storing in cache removes the source)
         try? FileManager.default.removeItem(at: destination)
         try FileManager.default.copyItem(at: downloadedURL, to: destination)
 
-        // Store in cache (uses copyItem internally, so source is preserved)
         if let cache = cache, let commitHash = commitHash {
             try? cache.storeFile(
                 at: downloadedURL,
@@ -409,11 +460,11 @@ public extension HubClient {
                 etag: etag,
                 ref: revision != commitHash ? revision : nil
             )
-            // Clean up incomplete file now that it's been copied to both destination and cache
             cache.removeIncompleteFile(repo: repo, kind: kind, filename: repoPath, etag: etag)
         } else {
-            // No cache, just remove the downloaded file (we already copied to destination)
-            try? FileManager.default.removeItem(at: downloadedURL)
+            if incompletePath == nil || downloadedURL != incompletePath {
+                try? FileManager.default.removeItem(at: downloadedURL)
+            }
         }
 
         return destination
@@ -447,11 +498,22 @@ public extension HubClient {
                 .appendingPathComponent(UUID().uuidString)
         }
 
-        // Open file for writing (append if resuming)
         let fileHandle: FileHandle
-        if resumeOffset > 0, FileManager.default.fileExists(atPath: outputPath.path) {
-            fileHandle = try FileHandle(forWritingTo: outputPath)
-            try fileHandle.seekToEnd()
+        var actualResumeOffset = resumeOffset
+
+        if resumeOffset > 0 {
+            if FileManager.default.fileExists(atPath: outputPath.path),
+                let attrs = try? FileManager.default.attributesOfItem(atPath: outputPath.path),
+                let currentSize = attrs[.size] as? Int64,
+                currentSize == resumeOffset
+            {
+                fileHandle = try FileHandle(forWritingTo: outputPath)
+                try fileHandle.seekToEnd()
+            } else {
+                actualResumeOffset = 0
+                FileManager.default.createFile(atPath: outputPath.path, contents: nil)
+                fileHandle = try FileHandle(forWritingTo: outputPath)
+            }
         } else {
             FileManager.default.createFile(atPath: outputPath.path, contents: nil)
             fileHandle = try FileHandle(forWritingTo: outputPath)
@@ -462,12 +524,13 @@ public extension HubClient {
         }
 
         // Track progress and throughput
-        var totalBytesWritten = resumeOffset
+        var totalBytesWritten = actualResumeOffset
         var lastProgressUpdate = Date()
-        var lastBytesForSpeed = resumeOffset
+        var lastBytesForSpeed = actualResumeOffset
         let chunkSize = 64 * 1024  // 64KB chunks
 
-        var buffer = Data(capacity: chunkSize)
+        var buffer = Data()
+        buffer.reserveCapacity(chunkSize)
 
         for try await byte in asyncBytes {
             buffer.append(byte)
@@ -506,7 +569,6 @@ public extension HubClient {
             progress.completedUnitCount = totalBytesWritten
         }
 
-        // Verify size if known
         if expectedSize > 0 && totalBytesWritten != expectedSize {
             throw HTTPClientError.requestError(
                 "Downloaded size mismatch: expected \(expectedSize), got \(totalBytesWritten)"
@@ -555,40 +617,52 @@ public extension HubClient {
 
 // MARK: - Progress Delegate
 
-private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+private actor DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate {
     private let progress: Progress
+    private let resumeOffset: Int64
     private var lastUpdateTime: Date
     private var lastBytesWritten: Int64 = 0
     private let minimumUpdateInterval: TimeInterval = 0.1  // Update speed every 100ms
 
-    init(progress: Progress) {
+    init(progress: Progress, resumeOffset: Int64 = 0) {
         self.progress = progress
+        self.resumeOffset = resumeOffset
         self.lastUpdateTime = Date()
     }
 
-    func urlSession(
+    nonisolated func urlSession(
         _: URLSession,
         downloadTask _: URLSessionDownloadTask,
         didWriteData _: Int64,
         totalBytesWritten: Int64,
         totalBytesExpectedToWrite: Int64
     ) {
-        progress.totalUnitCount = totalBytesExpectedToWrite
-        progress.completedUnitCount = totalBytesWritten
+        Task {
+            await updateProgress(
+                totalBytesWritten: totalBytesWritten,
+                totalBytesExpectedToWrite: totalBytesExpectedToWrite
+            )
+        }
+    }
+
+    private func updateProgress(totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        progress.totalUnitCount = resumeOffset + totalBytesExpectedToWrite
+        progress.completedUnitCount = resumeOffset + totalBytesWritten
 
         // Calculate and report throughput
         let now = Date()
         let elapsed = now.timeIntervalSince(lastUpdateTime)
         if elapsed >= minimumUpdateInterval {
-            let deltaBytes = totalBytesWritten - lastBytesWritten
+            let adjustedTotalBytes = resumeOffset + totalBytesWritten
+            let deltaBytes = adjustedTotalBytes - lastBytesWritten
             let speed = Double(deltaBytes) / elapsed
             progress.setUserInfoObject(speed, forKey: .throughputKey)
             lastUpdateTime = now
-            lastBytesWritten = totalBytesWritten
+            lastBytesWritten = adjustedTotalBytes
         }
     }
 
-    func urlSession(
+    nonisolated func urlSession(
         _: URLSession,
         downloadTask _: URLSessionDownloadTask,
         didFinishDownloadingTo _: URL

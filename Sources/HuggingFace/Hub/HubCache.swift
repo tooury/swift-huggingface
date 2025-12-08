@@ -166,16 +166,16 @@ public struct HubCache: Sendable {
     ///   - kind: The kind of repository.
     ///   - filename: The filename within the repository.
     ///   - etag: The etag of the file being downloaded.
-    /// - Returns: The size in bytes of the incomplete file, or 0 if it doesn't exist.
-    public func incompleteFileSize(repo: Repo.ID, kind: Repo.Kind, filename: String, etag: String) -> Int {
+    /// - Returns: The size in bytes of the incomplete file, or `nil` if it doesn't exist, etag is invalid, or size cannot be determined.
+    public func incompleteFileSize(repo: Repo.ID, kind: Repo.Kind, filename: String, etag: String) -> Int? {
         let path = incompleteFilePath(repo: repo, kind: kind, filename: filename, etag: etag)
         guard FileManager.default.fileExists(atPath: path.path) else {
-            return 0
+            return nil
         }
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: path.path),
             let size = attributes[.size] as? Int
         else {
-            return 0
+            return nil
         }
         return size
     }
