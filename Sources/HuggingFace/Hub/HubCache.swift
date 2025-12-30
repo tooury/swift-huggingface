@@ -96,10 +96,18 @@ public struct HubCache: Sendable {
 
     /// The fallback cache directory when resolution fails.
     private static var fallbackDirectory: URL {
+        #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
+        // Use app's caches directory on iOS/tvOS/watchOS/visionOS
+        // as homeDirectoryForCurrentUser is unavailable on these platforms
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("huggingface")
+            .appendingPathComponent("hub")
+        #else
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".cache")
             .appendingPathComponent("huggingface")
             .appendingPathComponent("hub")
+        #endif
     }
 
     // MARK: - Repository Path
