@@ -1,0 +1,14 @@
+[debug] [2026-02-13T20:58:11.759Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-02-13T20:58:11.761Z] > authorizing via signed-in user (tom@bcclive.com)
+[debug] [2026-02-13T20:58:11.762Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-02-13T20:58:11.762Z] > authorizing via signed-in user (tom@bcclive.com)
+[debug] [2026-02-13T20:58:11.794Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-02-13T20:58:11.794Z] > authorizing via signed-in user (tom@bcclive.com)
+[debug] [2026-02-13T20:58:11.810Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-02-13T20:58:11.811Z] > authorizing via signed-in user (tom@bcclive.com)
+[debug] [2026-02-13T20:58:11.811Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-02-13T20:58:11.811Z] > authorizing via signed-in user (tom@bcclive.com)
+[debug] [2026-02-13T20:58:11.822Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-02-13T20:58:11.822Z] > authorizing via signed-in user (tom@bcclive.com)
+[debug] [2026-02-13T20:58:11.822Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-02-13T20:58:11.822Z] > authorizing via signed-in user (tom@bcclive.com)
